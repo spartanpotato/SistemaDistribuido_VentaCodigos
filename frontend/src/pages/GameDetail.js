@@ -27,13 +27,13 @@ const GameDetail = ({ gameId, onNavigate }) => {
 
       <div className="glass-card" style={styles.content}>
         <div style={styles.imagePlaceholder}>
-          {game.titulo ? game.titulo[0] : '?'}
+          {game.titulo ? (typeof game.titulo === 'string' ? game.titulo[0] : game.titulo[0]) : '?'}
         </div>
         
         <div style={styles.info}>
-          <h1>{game.titulo}</h1>
+          <h1>{typeof game.titulo === 'string' ? game.titulo : game.titulo?.[0] || 'Unknown'}</h1>
           <div style={styles.tags}>
-            <span style={styles.tag}>{game.plataforma || 'Unknown Platform'}</span>
+            <span style={styles.tag}>{typeof game.plataforma === 'string' ? game.plataforma : game.plataforma?.[0] || 'Unknown Platform'}</span>
             <span style={styles.tag}>{game.region_bloqueo || 'Global'}</span>
           </div>
           
@@ -42,7 +42,7 @@ const GameDetail = ({ gameId, onNavigate }) => {
           </p>
           
           <div style={styles.actionArea}>
-            <div style={styles.price}>${game.precio?.toLocaleString('es-CL') || 0}</div>
+            <div style={styles.price}>${(typeof game.precio_base === 'number' ? game.precio_base : game.precio_base?.[0])?.toLocaleString('es-CL') || 0}</div>
             <button 
               className="btn-primary" 
               onClick={() => {

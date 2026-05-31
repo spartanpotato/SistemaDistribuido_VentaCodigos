@@ -3,6 +3,7 @@
 import os
 # Importamos Flask (para crear la API web) y jsonify (para responder en formato JSON)
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 # Importamos pysolr (la librería para comunicarnos con Solr)
 import pysolr
 
@@ -14,6 +15,9 @@ from consumer import iniciar_escucha_busqueda
 
 # 1. Inicializamos la aplicación Flask
 app = Flask(__name__)
+
+# Habilitar CORS para permitir solicitudes desde el frontend
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # 2. Configuramos la conexión a Solr
 # "solr_engine" es el nombre que le dimos al contenedor en el docker-compose.yml
@@ -32,15 +36,72 @@ def get_db_connection():
 # Creamos el "cliente" que hablará con Solr
 solr = pysolr.Solr(SOLR_URL, always_commit=True)
 
+# Función para indexar datos de PostgreSQL en Solr
+def indexar_datos_en_solr():
+    """Trae todos los juegos de PostgreSQL y los indexa en Solr"""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Traer todos los juegos de la BD
+        cur.execute("SELECT id_juego, titulo, plataforma, precio_base FROM catalogo")
+        juegos = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        if not juegos:
+            return {"mensaje": "No hay juegos para indexar", "total": 0}
+        
+        # Convertir los juegos a formato que Solr entienda
+        documentos = []
+        for juego in juegos:
+            doc = {
+                'id': juego['id_juego'],
+                'titulo': juego['titulo'],
+                'plataforma': juego['plataforma'],
+                'precio_base': float(juego['precio_base']),
+            }
+            documentos.append(doc)
+        
+        # Limpiar Solr antes de indexar (borrar documentos anteriores)
+        solr.delete('*:*')
+        
+        # Indexar en Solr
+        solr.add(documentos)
+        
+        return {
+            "mensaje": "Datos indexados exitosamente en Solr",
+            "total_indexados": len(documentos),
+            "juegos": documentos
+        }
+    except Exception as e:
+        return {"error": f"Fallo al indexar datos: {str(e)}"}
+
+# Ruta para indexar datos (llamar una sola vez al iniciar)
+@app.route('/api/indexar', methods=['POST'])
+def indexar():
+    resultado = indexar_datos_en_solr()
+    return jsonify(resultado), 200 if "error" not in resultado else 500
+
+# Función para normalizar datos de Solr (convertir arrays a valores simples)
+def normalizar_juego(juego):
+    """Convierte los arrays de Solr en valores simples para el frontend"""
+    return {
+        'id': juego.get('id', ''),
+        'titulo': juego.get('titulo', [''])[0] if isinstance(juego.get('titulo'), list) else juego.get('titulo', ''),
+        'plataforma': juego.get('plataforma', [''])[0] if isinstance(juego.get('plataforma'), list) else juego.get('plataforma', ''),
+        'precio_base': juego.get('precio_base', [0])[0] if isinstance(juego.get('precio_base'), list) else juego.get('precio_base', 0),
+    }
+
 # 3. Creamos la "Ruta" o "Endpoint" de búsqueda inteligente
-@app.route('/buscarPorTitulo', methods=['GET'])
+@app.route('/api/buscarPorTitulo', methods=['GET'])
 def buscar_juegos():
     # Ahora atrapamos un parámetro normal, por ejemplo: /buscarPorTitulo?t=splatoon
     # Si no envían nada, el valor será un texto vacío ''
     nombre_juego = request.args.get('t', '') 
 
-    if nombre_juego == '':
-        # Si el usuario no escribió nada, le traemos todo el catálogo
+    if nombre_juego == '' or nombre_juego == '*:*':
+        # Si el usuario no escribió nada o si envía *:*, le traemos todo el catálogo
         query_solr = '*:*'
     else:
         # Si el usuario escribió "splatoon", el backend arma la sintaxis de Solr sola:
@@ -54,7 +115,7 @@ def buscar_juegos():
 
         lista_juegos = []
         for juego in resultados:
-            lista_juegos.append(juego) 
+            lista_juegos.append(normalizar_juego(juego))
 
         return jsonify({
             "mensaje": "Búsqueda exitosa",
@@ -64,9 +125,10 @@ def buscar_juegos():
 
     except Exception as e:
         return jsonify({"error": "Fallo en el servidor de búsqueda", "detalle": str(e)}), 500
+
     
 # Ruta para buscar juegos exclusivamente por su plataforma
-@app.route('/buscarPorPlataforma', methods=['GET'])
+@app.route('/api/buscarPorPlataforma', methods=['GET'])
 def buscar_por_plataforma():
     # Atrapamos el parámetro 'p' de la URL. Ejemplo: /buscarPorPlataforma?p=Nintendo
     plataforma_buscada = request.args.get('p', '') 
@@ -87,7 +149,7 @@ def buscar_por_plataforma():
 
         lista_juegos = []
         for juego in resultados:
-            lista_juegos.append(juego) 
+            lista_juegos.append(normalizar_juego(juego))
 
         return jsonify({
             "mensaje": f"Búsqueda por plataforma exitosa",
@@ -100,8 +162,8 @@ def buscar_por_plataforma():
         return jsonify({"error": "Fallo en el servidor de búsqueda", "detalle": str(e)}), 500
     
 
-# Nueva ruta que recibe el ID del juego en la URL (ej: /juego/splatoon-3-ext)
-@app.route('/juego/<id_juego>', methods=['GET'])
+# Nueva ruta que recibe el ID del juego en la URL (ej: /api/juego/splatoon-3-ext)
+@app.route('/api/juego/<id_juego>', methods=['GET'])
 def obtener_detalle_juego(id_juego):
     conn = None
     try:
@@ -117,8 +179,17 @@ def obtener_detalle_juego(id_juego):
         
         if juego is None:
             return jsonify({"error": "Juego no encontrado"}), 404
+        
+        # Normalizar respuesta: convertir id_juego a id para consistencia
+        juego_normalizado = {
+            'id': juego.get('id_juego', ''),
+            'titulo': juego.get('titulo', ''),
+            'plataforma': juego.get('plataforma', ''),
+            'precio_base': float(juego.get('precio_base', 0)) if juego.get('precio_base') else 0,
+            'disponibilidad_regional': juego.get('disponibilidad_regional', {})
+        }
             
-        return jsonify(juego), 200
+        return jsonify(juego_normalizado), 200
 
     except Exception as e:
         return jsonify({"error": "Fallo en la base de datos", "detalle": str(e)}), 500

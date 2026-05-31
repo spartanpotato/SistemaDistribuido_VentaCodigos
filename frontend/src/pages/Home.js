@@ -48,13 +48,13 @@ const Home = ({ onNavigate }) => {
           <div style={styles.loading}>No se encontraron juegos.</div>
         ) : (
           games.map(game => (
-            <div key={game.id_juego} className="glass-card" style={styles.card} onClick={() => onNavigate('detail', game.id_juego)}>
+            <div key={game.id} className="glass-card" style={styles.card} onClick={() => onNavigate('detail', game.id)}>
               <div style={styles.cardImagePlaceholder}>
-                {game.titulo ? game.titulo[0] : '?'}
+                {game.titulo ? (typeof game.titulo === 'string' ? game.titulo[0] : game.titulo[0]) : '?'}
               </div>
               <div style={styles.cardContent}>
-                <h3>{game.titulo}</h3>
-                <p style={styles.price}>${game.precio?.toLocaleString('es-CL') || 0}</p>
+                <h3>{typeof game.titulo === 'string' ? game.titulo : game.titulo[0]}</h3>
+                <p style={styles.price}>${(typeof game.precio_base === 'number' ? game.precio_base : game.precio_base?.[0])?.toLocaleString('es-CL') || 0}</p>
               </div>
             </div>
           ))

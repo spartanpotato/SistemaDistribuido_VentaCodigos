@@ -51,8 +51,6 @@ services:
       - "5050:5050"
     volumes:
       # For hot reloading
-      - "5001:5001"
-    volumes:                                  # For hot reloading
       - ./backend:/app
     depends_on:
       - postgres_db

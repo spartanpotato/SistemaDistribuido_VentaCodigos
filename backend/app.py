@@ -1,19 +1,22 @@
 import json
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from shared.cache import redis_client
 from mod_ventas.service import procesar_checkout
 
 app = Flask(__name__)
 
+# Habilitar CORS para solicitudes desde frontend
+CORS(app, resources={r"/*": {"origins": "*"}})
+
 # Mocked user for MVP
 MOCK_USER_ID = "9988-7766"
 MOCK_EMAIL = "correo.ejemplo@gmail.com"
-
 @app.route('/')
 def home():
     return jsonify({"status": "Backend running!"})
 
-@app.route('/cart', methods=['GET'])
+@app.route('/api/cart', methods=['GET'])
 def get_cart():
     try:
         clave_redis = f"cart:{MOCK_USER_ID}"
@@ -25,7 +28,7 @@ def get_cart():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/cart', methods=['POST'])
+@app.route('/api/cart', methods=['POST'])
 def update_cart():
     try:
         data = request.json
@@ -36,7 +39,7 @@ def update_cart():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/ventas/comprar', methods=['POST'])
+@app.route('/api/ventas/comprar', methods=['POST'])
 def comprar():
     try:
         id_orden = procesar_checkout(MOCK_USER_ID, MOCK_EMAIL)
